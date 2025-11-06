@@ -1,0 +1,20 @@
+# Ignore files that don't need to be deployed to Vercel
+node_modules
+.next
+*.log
+.env.local
+.env*.local
+.DS_Store
+*.pem
+hardhat.config.ts
+contracts/
+deploy/
+tasks/
+test/
+artifacts/
+cache/
+types/
+node
+deployments/localhost/
+deployments/sepolia/solcInputs/
+
