@@ -38,9 +38,12 @@ if (!fs.existsSync(outdir)) {
 const line =
   "\n===================================================================\n";
 
+// Check if we're in Vercel build environment
+const isVercel = process.env.VERCEL === "1" || process.env.VERCEL_ENV;
+
 if (!fs.existsSync(dir)) {
   console.error(
-    `${line}Unable to locate ${rel}. Expecting <root>/packages/${dirname}${line}`
+    `${line}Unable to locate root directory. Expecting <root>/${dirname}${line}`
   );
   process.exit(1);
 }
@@ -59,18 +62,30 @@ const deploymentsDir = path.join(dir, "deployments");
 // }
 
 function deployOnHardhatNode() {
-  if (process.platform === "win32") {
-    // Not supported on Windows
+  // Skip in Vercel build environment or Windows
+  if (isVercel || process.platform === "win32") {
     return;
   }
+  
+  // Check if script exists before trying to execute
+  const scriptPath = path.resolve("./scripts/deploy-hardhat-node.sh");
+  if (!fs.existsSync(scriptPath)) {
+    console.warn(`⚠️  deploy-hardhat-node.sh not found. Skipping auto-deployment.`);
+    return;
+  }
+  
   try {
     execSync(`./deploy-hardhat-node.sh`, {
       cwd: path.resolve("./scripts"),
       stdio: "inherit",
     });
   } catch (e) {
-    console.error(`${line}Script execution failed: ${e}${line}`);
-    process.exit(1);
+    console.warn(`⚠️  Script execution failed: ${e.message}. Continuing with fallback.`);
+    // Don't exit in build environments
+    if (!isVercel) {
+      console.error(`${line}Script execution failed: ${e}${line}`);
+      process.exit(1);
+    }
   }
 }
 
@@ -90,8 +105,8 @@ function resolveChainDirectory(chainName) {
 
 function readDeployment(chainName, chainId, contractName, optional) {
   const chainDeploymentDir = resolveChainDirectory(chainName);
-  if (!fs.existsSync(chainDeploymentDir) && chainId === 31337) {
-    // Try to auto-deploy the contract on hardhat node!
+  if (!fs.existsSync(chainDeploymentDir) && chainId === 31337 && !isVercel) {
+    // Try to auto-deploy the contract on hardhat node! (skip in Vercel)
     deployOnHardhatNode();
   }
 
@@ -99,14 +114,22 @@ function readDeployment(chainName, chainId, contractName, optional) {
     if (optional) {
       // Only show warning for optional deployments (like sepolia)
       console.warn(
-        `⚠️  Sepolia deployment not found at '${chainDeploymentDir}'. Using zero address. To deploy: npx hardhat deploy --network sepolia`
+        `⚠️  ${chainName} deployment not found at '${chainDeploymentDir}'. Will use fallback.`
       );
     } else {
-      console.error(
-        `${line}Unable to locate '${chainDeploymentDir}' directory.\n\n1. Goto '${dirname}' directory\n2. Run 'npx hardhat deploy --network ${chainName}'.${line}`
-      );
+      // In Vercel, treat localhost as optional and use fallback
+      if (isVercel) {
+        console.warn(
+          `⚠️  Localhost deployment not found at '${chainDeploymentDir}'. Using fallback for Vercel build.`
+        );
+      } else {
+        console.error(
+          `${line}Unable to locate '${chainDeploymentDir}' directory.\n\n1. Goto '${dirname}' directory\n2. Run 'npx hardhat deploy --network ${chainName}'.${line}`
+        );
+      }
     }
-    if (!optional) {
+    // In Vercel or if optional, don't exit - use fallback
+    if (!optional && !isVercel) {
       process.exit(1);
     }
     return undefined;
@@ -123,12 +146,6 @@ function readDeployment(chainName, chainId, contractName, optional) {
   return obj;
 }
 
-// Auto deployed on Linux/Mac (will fail on windows)
-let deployLocalhost = readDeployment("localhost", 31337, CONTRACT_NAME, false /* optional */);
-
-// Sepolia is optional
-let deploySepolia = readDeployment("sepolia", 11155111, CONTRACT_NAME, true /* optional */);
-
 // Fallback for Vercel builds or when deployments are not available
 // Use hardcoded addresses from previous deployments
 const FALLBACK_ADDRESSES = {
@@ -136,31 +153,75 @@ const FALLBACK_ADDRESSES = {
   sepolia: "0x271cf992495f9d14e1C0B1aB6dCC8D801bb72C42"
 };
 
-// If localhost deployment is missing (e.g., in Vercel build), try to use a minimal ABI
+// Try to read Sepolia first (more likely to exist in Vercel)
+let deploySepolia = readDeployment("sepolia", 11155111, CONTRACT_NAME, true /* optional */);
+// Try localhost (may not exist in Vercel)
+let deployLocalhost = readDeployment("localhost", 31337, CONTRACT_NAME, isVercel /* optional in Vercel */);
+
+// If localhost deployment is missing (e.g., in Vercel build), use Sepolia ABI or fallback
 if (!deployLocalhost) {
   console.warn(`⚠️  Localhost deployment not found. Using fallback for build.`);
-  // Try to read from existing generated ABI file as fallback
-  const existingABIPath = path.join(outdir, `${CONTRACT_NAME}ABI.ts`);
-  if (fs.existsSync(existingABIPath)) {
-    try {
-      const existingContent = fs.readFileSync(existingABIPath, "utf-8");
-      const abiMatch = existingContent.match(/export const \w+ABI = ({[\s\S]*?}) as const;/);
-      if (abiMatch) {
-        const parsed = JSON.parse(abiMatch[1]);
-        deployLocalhost = { abi: parsed.abi, address: FALLBACK_ADDRESSES.localhost };
-        console.log(`✅ Using existing ABI from ${existingABIPath}`);
-      }
-    } catch (e) {
-      console.warn(`⚠️  Could not parse existing ABI: ${e.message}`);
-    }
-  }
   
-  // If still no ABI, exit with error (this should not happen if deployments are committed)
-  if (!deployLocalhost) {
-    console.error(
-      `${line}Unable to locate localhost deployment and no fallback ABI found.\n\nFor Vercel builds, ensure deployments are committed to the repository or run 'npm run genabi' locally first.${line}`
-    );
-    process.exit(1);
+  // First, try to use Sepolia deployment if available (same ABI)
+  if (deploySepolia) {
+    deployLocalhost = { 
+      abi: deploySepolia.abi, 
+      address: FALLBACK_ADDRESSES.localhost,
+      chainId: 31337
+    };
+    console.log(`✅ Using Sepolia ABI for localhost fallback`);
+  } else {
+    // Try to read from existing generated ABI file as fallback
+    const existingABIPath = path.join(outdir, `${CONTRACT_NAME}ABI.ts`);
+    if (fs.existsSync(existingABIPath)) {
+      try {
+        const existingContent = fs.readFileSync(existingABIPath, "utf-8");
+        const abiMatch = existingContent.match(/export const \w+ABI = ({[\s\S]*?}) as const;/);
+        if (abiMatch) {
+          const parsed = JSON.parse(abiMatch[1]);
+          deployLocalhost = { 
+            abi: parsed.abi, 
+            address: FALLBACK_ADDRESSES.localhost,
+            chainId: 31337
+          };
+          console.log(`✅ Using existing ABI from ${existingABIPath}`);
+        }
+      } catch (e) {
+        console.warn(`⚠️  Could not parse existing ABI: ${e.message}`);
+      }
+    }
+    
+    // If still no ABI, try to read from sepolia deployment file directly
+    if (!deployLocalhost) {
+      const sepoliaDeploymentPath = path.join(deploymentsDir, "sepolia", `${CONTRACT_NAME}.json`);
+      if (fs.existsSync(sepoliaDeploymentPath)) {
+        try {
+          const sepoliaContent = fs.readFileSync(sepoliaDeploymentPath, "utf-8");
+          const sepoliaObj = JSON.parse(sepoliaContent);
+          deployLocalhost = { 
+            abi: sepoliaObj.abi, 
+            address: FALLBACK_ADDRESSES.localhost,
+            chainId: 31337
+          };
+          deploySepolia = { 
+            abi: sepoliaObj.abi, 
+            address: sepoliaObj.address || FALLBACK_ADDRESSES.sepolia,
+            chainId: 11155111
+          };
+          console.log(`✅ Using ABI from sepolia deployment file`);
+        } catch (e) {
+          console.warn(`⚠️  Could not read sepolia deployment: ${e.message}`);
+        }
+      }
+    }
+    
+    // Last resort: exit with error (should not happen if deployments are committed)
+    if (!deployLocalhost) {
+      console.error(
+        `${line}Unable to locate localhost deployment and no fallback ABI found.\n\nFor Vercel builds, ensure deployments/sepolia/${CONTRACT_NAME}.json is committed to the repository.${line}`
+      );
+      process.exit(1);
+    }
   }
 }
 
