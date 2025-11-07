@@ -83,8 +83,28 @@ export default function Home() {
 
   const handleSubmitTrip = useCallback(
     async (values: TripFormValues) => {
-      if (!writeContract || !signer || !fheInstance || !plannerInfo.address) {
-        setFeedback("Connect a Rainbow-compatible wallet on a supported network.");
+      if (!address) {
+        setFeedback("Please connect your wallet first.");
+        return;
+      }
+      if (!chainId) {
+        setFeedback("Unable to detect network. Please switch to Sepolia or Hardhat network.");
+        return;
+      }
+      if (!plannerInfo.address) {
+        setFeedback(`Contract not deployed on current network (Chain ID: ${chainId}). Please switch to Sepolia (11155111) or Hardhat (31337).`);
+        return;
+      }
+      if (!signer) {
+        setFeedback("Unable to get wallet signer. Please reconnect your wallet.");
+        return;
+      }
+      if (!fheInstance) {
+        setFeedback("FHEVM instance is initializing. Please wait a moment and try again.");
+        return;
+      }
+      if (!writeContract) {
+        setFeedback("Contract instance not ready. Please try again.");
         return;
       }
 
@@ -176,8 +196,28 @@ export default function Home() {
 
   const handleDecryptTrip = useCallback(
     async (tripId: number) => {
-      if (!writeContract || !signer || !fheInstance || !plannerInfo.address) {
-        setFeedback("Connect a wallet to read encrypted payloads.");
+      if (!address) {
+        setFeedback("Please connect your wallet first.");
+        return;
+      }
+      if (!chainId) {
+        setFeedback("Unable to detect network. Please switch to Sepolia or Hardhat network.");
+        return;
+      }
+      if (!plannerInfo.address) {
+        setFeedback(`Contract not deployed on current network (Chain ID: ${chainId}). Please switch to Sepolia (11155111) or Hardhat (31337).`);
+        return;
+      }
+      if (!signer) {
+        setFeedback("Unable to get wallet signer. Please reconnect your wallet.");
+        return;
+      }
+      if (!fheInstance) {
+        setFeedback("FHEVM instance is initializing. Please wait a moment and try again.");
+        return;
+      }
+      if (!writeContract) {
+        setFeedback("Contract instance not ready. Please try again.");
         return;
       }
 
@@ -246,9 +286,42 @@ export default function Home() {
   const isContractReady = Boolean(plannerInfo.address && baseContract);
   const disableActions = !isContractReady || !address;
 
+  // Determine status message
+  const getStatusMessage = () => {
+    if (!address) {
+      return { message: "Please connect your wallet to get started.", type: "info" };
+    }
+    if (!chainId) {
+      return { message: "Unable to detect network. Please switch to Sepolia or Hardhat.", type: "warning" };
+    }
+    if (!plannerInfo.address) {
+      return { 
+        message: `Contract not available on current network (Chain ID: ${chainId}). Please switch to Sepolia (11155111) or Hardhat (31337).`, 
+        type: "warning" 
+      };
+    }
+    if (!fheInstance) {
+      return { message: "FHEVM is initializing. Please wait a moment...", type: "info" };
+    }
+    return { message: "Ready to use! Connect your wallet and start planning.", type: "success" };
+  };
+
+  const status = getStatusMessage();
+
   return (
     <div className="flex flex-col gap-8">
       <PlannerHero chainName={plannerInfo.chainName} contractAddress={plannerInfo.address} />
+      {status.message && (
+        <div className={`rounded-2xl border p-4 ${
+          status.type === "warning" 
+            ? "border-amber-200 bg-amber-50 text-amber-800" 
+            : status.type === "success"
+            ? "border-green-200 bg-green-50 text-green-800"
+            : "border-blue-200 bg-blue-50 text-blue-800"
+        }`}>
+          <p className="text-sm font-medium">{status.message}</p>
+        </div>
+      )}
       <WorkflowSteps />
       <TripBuilder disabled={disableActions} pending={pendingTrip} onSubmit={handleSubmitTrip} />
       <TripVault
