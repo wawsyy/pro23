@@ -65,7 +65,7 @@ export default function Home() {
     }
     try {
       const onchain = await writeContract.listMyTrips();
-      const formatted: TripSummary[] = onchain.map((trip, idx) => ({
+      const formatted: TripSummary[] = onchain.map((trip: { title: string; style: bigint | number; createdAt: bigint | number }, idx: number) => ({
         id: idx,
         title: trip.title,
         style: Number(trip.style),
