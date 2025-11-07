@@ -27,7 +27,7 @@ export default function Home() {
   const eip1193Provider =
     typeof window !== "undefined" ? (window.ethereum as ethers.Eip1193Provider | undefined) : undefined;
 
-  const { instance: fheInstance } = useFhevm({
+  const { instance: fheInstance, status: fhevmStatus, error: fhevmError } = useFhevm({
     provider: eip1193Provider,
     chainId,
     initialMockChains: MOCK_CHAINS,
@@ -99,8 +99,16 @@ export default function Home() {
         setFeedback("Unable to get wallet signer. Please reconnect your wallet.");
         return;
       }
+      if (fhevmStatus === "loading" || fhevmStatus === "idle") {
+        setFeedback("FHEVM is still initializing. Please wait a moment and try again.");
+        return;
+      }
+      if (fhevmStatus === "error") {
+        setFeedback(`FHEVM initialization failed: ${fhevmError?.message || "Unknown error"}. Please refresh the page.`);
+        return;
+      }
       if (!fheInstance) {
-        setFeedback("FHEVM instance is initializing. Please wait a moment and try again.");
+        setFeedback("FHEVM instance is not available. Please wait a moment and try again.");
         return;
       }
       if (!writeContract) {
@@ -191,7 +199,7 @@ export default function Home() {
         setPendingTrip(false);
       }
     },
-    [writeContract, signer, fheInstance, plannerInfo.address, refreshTrips],
+    [writeContract, signer, fheInstance, plannerInfo.address, refreshTrips, fhevmStatus, fhevmError],
   );
 
   const handleDecryptTrip = useCallback(
@@ -212,8 +220,16 @@ export default function Home() {
         setFeedback("Unable to get wallet signer. Please reconnect your wallet.");
         return;
       }
+      if (fhevmStatus === "loading" || fhevmStatus === "idle") {
+        setFeedback("FHEVM is still initializing. Please wait a moment and try again.");
+        return;
+      }
+      if (fhevmStatus === "error") {
+        setFeedback(`FHEVM initialization failed: ${fhevmError?.message || "Unknown error"}. Please refresh the page.`);
+        return;
+      }
       if (!fheInstance) {
-        setFeedback("FHEVM instance is initializing. Please wait a moment and try again.");
+        setFeedback("FHEVM instance is not available. Please wait a moment and try again.");
         return;
       }
       if (!writeContract) {
@@ -279,7 +295,7 @@ export default function Home() {
         setPendingTripDecrypt(false);
       }
     },
-    [writeContract, signer, fheInstance, plannerInfo.address, storage],
+    [writeContract, signer, fheInstance, plannerInfo.address, storage, fhevmStatus, fhevmError],
   );
 
 
@@ -300,10 +316,23 @@ export default function Home() {
         type: "warning" 
       };
     }
+    if (fhevmStatus === "loading") {
+      return { message: "FHEVM is initializing. This may take a few moments...", type: "info" };
+    }
+    if (fhevmStatus === "error") {
+      const errorMsg = fhevmError?.message || "Unknown error";
+      return { 
+        message: `FHEVM initialization failed: ${errorMsg}. Please try refreshing the page.`, 
+        type: "warning" 
+      };
+    }
+    if (fhevmStatus === "idle" && !fheInstance) {
+      return { message: "FHEVM is starting up. Please wait...", type: "info" };
+    }
     if (!fheInstance) {
       return { message: "FHEVM is initializing. Please wait a moment...", type: "info" };
     }
-    return { message: "Ready to use! Connect your wallet and start planning.", type: "success" };
+    return { message: "Ready to use! You can now create and manage encrypted trips.", type: "success" };
   };
 
   const status = getStatusMessage();
