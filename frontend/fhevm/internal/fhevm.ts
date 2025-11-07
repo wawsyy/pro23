@@ -302,7 +302,16 @@ export const createFhevmInstance = async (parameters: {
   // notify that state === "creating"
   notify("creating");
 
-  const instance = await relayerSDK.createInstance(config);
+  // Add timeout for createInstance to handle relayer unavailability
+  const CREATE_INSTANCE_TIMEOUT = 30000; // 30 seconds
+  const instance = await Promise.race([
+    relayerSDK.createInstance(config),
+    new Promise<never>((_, reject) => {
+      setTimeout(() => {
+        reject(new Error("Relayer temporarily unavailable: createInstance timed out after 30 seconds. Please try again later."));
+      }, CREATE_INSTANCE_TIMEOUT);
+    }),
+  ]);
 
   // Save the key even if aborted
   await publicKeyStorageSet(

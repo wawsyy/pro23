@@ -104,7 +104,15 @@ export default function Home() {
         return;
       }
       if (fhevmStatus === "error") {
-        setFeedback(`FHEVM initialization failed: ${fhevmError?.message || "Unknown error"}. Please refresh the page.`);
+        const errorMsg = fhevmError?.message || "Unknown error";
+        const isRelayerError = errorMsg.includes("Relayer temporarily unavailable") || 
+                              errorMsg.includes("relayer") || 
+                              errorMsg.includes("timeout");
+        if (isRelayerError) {
+          setFeedback("⚠️ FHE Relayer service is temporarily unavailable. Please try again in a few minutes or use Hardhat local network.");
+        } else {
+          setFeedback(`FHEVM initialization failed: ${errorMsg}. Please refresh the page.`);
+        }
         return;
       }
       if (!fheInstance) {
@@ -225,7 +233,15 @@ export default function Home() {
         return;
       }
       if (fhevmStatus === "error") {
-        setFeedback(`FHEVM initialization failed: ${fhevmError?.message || "Unknown error"}. Please refresh the page.`);
+        const errorMsg = fhevmError?.message || "Unknown error";
+        const isRelayerError = errorMsg.includes("Relayer temporarily unavailable") || 
+                              errorMsg.includes("relayer") || 
+                              errorMsg.includes("timeout");
+        if (isRelayerError) {
+          setFeedback("⚠️ FHE Relayer service is temporarily unavailable. Please try again in a few minutes or use Hardhat local network.");
+        } else {
+          setFeedback(`FHEVM initialization failed: ${errorMsg}. Please refresh the page.`);
+        }
         return;
       }
       if (!fheInstance) {
@@ -321,6 +337,16 @@ export default function Home() {
     }
     if (fhevmStatus === "error") {
       const errorMsg = fhevmError?.message || "Unknown error";
+      // Check if it's a relayer-related error
+      const isRelayerError = errorMsg.includes("Relayer temporarily unavailable") || 
+                            errorMsg.includes("relayer") || 
+                            errorMsg.includes("timeout");
+      if (isRelayerError) {
+        return { 
+          message: `⚠️ FHE Relayer service is temporarily unavailable. This is a known issue with the Sepolia testnet relayer. Please try again in a few minutes or use Hardhat local network for testing.`, 
+          type: "warning" 
+        };
+      }
       return { 
         message: `FHEVM initialization failed: ${errorMsg}. Please try refreshing the page.`, 
         type: "warning" 
